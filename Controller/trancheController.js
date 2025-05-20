@@ -6,7 +6,7 @@ const jwt = require("jsonwebtoken");
 // const tranche_details = require('../models/tranche_details');
 
 const models = initModels(sequelize);
-const { tranche_details_staging, tranche_details, repayment_schedule, repayment_schedule_staging } = models;
+const { tranche_details_staging, tranche_details, repayment_schedule, repayment_schedule_staging, lender_master } = models;
 
 // Sending Create Executed Documents  
 exports.trancheCreate = async (req, res) => {
@@ -111,29 +111,49 @@ exports.trancheFetch = async (req, res) => {
 
 
 exports.trancheTwo = async (req, res) => {
-    const { flag } = req.body; // Or use req.query if sent via query param
+    const flag = req.query.flag;
+    console.log("flag:", flag);
 
     try {
-        // Define base attributes
         const attributes = ["tranche_id", "sanction_id", "lender_code", "interest_start_date"];
+        const include = [];
 
-        // Add "bank_name" if flag == 1
-        if (flag == 1) {
+        // If flag is 1, include bank_name and lender_name via join
+        if (flag == 1 || flag === "1") {
             attributes.push("bank_name");
+
+            include.push({
+                model: lender_master,
+                as: "lender_code_lender_master",
+                attributes: ["lender_name"], // Only get lender_name
+                required: false
+            });
+        }
+         if (flag == 2 || flag === "2") {
+            attributes.push("");
+
+            include.push({
+                model: lender_master,
+                as: "lender_code_lender_master",
+                attributes: ["lender_name"], // Only get lender_name
+                required: false
+            });
         }
 
         const tranchemain = await tranche_details.findAll({
-            attributes: attributes
-            // , where: { approval_status: "Approved" }
+            attributes,
+            include
         });
 
-        return res.status(201).json({ success: true, data: tranchemain });
+        console.log("Fetched tranche data:", tranchemain);
+
+        return res.status(200).json({ success: true, data: tranchemain });
     } catch (error) {
         console.error("Error fetching tranche:", error);
         return res.status(500).json({ success: false, message: "Server Error", error: error.message });
     }
-}
-  
+};
+
 exports.trancheCheck = async (req, res) => {
 
     const datagot = req.body;

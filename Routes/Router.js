@@ -105,6 +105,8 @@ const { generateRundownReport } = require("../Controller/Reports/RundownControll
 const { generateEffectiveInterestofReport } = require("../Controller/Reports/EffectiveInterestController");
 const { UTRuploadFileToLocal } = require("../s3_Bucket/utrstorage");
 const { UTRThree, UTRCreate, UTRFetch, UTRPending, UTRView, UTRUpdate, UTRApprove, UTRReject } = require("../Controller/UTRController");
+const { generateRepaymentScheduleReport } = require("../Controller/Reports/repaymanschedulecontroller");
+const { appendXML } = require("pdfkit");
 
 const router = express.Router();
 
@@ -244,7 +246,9 @@ router.post("/generate-LoanTrancheDetailsReport", generateLoanTrancheDetailsRepo
 router.post("/generate-FundingMixReport", generateFundingMixReport);
 router.post("/generate-EffectiveInterestRateReport", generateEffectiveInterestRateReport);
 router.get("/generate-RundownReport", generateRundownReport);
-router.get("/generate-EffectiveInterestofReport", generateEffectiveInterestofReport)
+router.get("/generate-EffectiveInterestofReport", generateEffectiveInterestofReport);
+router.post("/generate-RepaymentScheduleReport", generateRepaymentScheduleReport);
+
 
 // report get Lendrcodes apis
 router.get("/generate/roc/lendercodes", getroclenders)
