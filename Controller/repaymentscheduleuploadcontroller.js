@@ -6,7 +6,7 @@ const cron = require("node-cron");
 const moment = require("moment");
 
 const models = initModels(sequelize);
-const { repayment_schedule_staging, repayment_schedule, alert_management, tranche_details, sanction_details } = models;
+const { repayment_schedule_staging, repayment_schedule, lender_master, alert_management, tranche_details, sanction_details } = models;
 exports.uploadRepaymentSchedule = async (req, res) => {
     try {
         const data = req.body;
@@ -77,7 +77,14 @@ exports.repaymentLenders = async (req, res) => {
         const tranchemain = await repayment_schedule.findAll({
             attributes: [
                 "tranche_id", "sanction_id", "lender_code"
-            ], where: { approval_status: "Approved" }
+            ], include: [
+                {
+                    model: lender_master,
+                    as: 'lender_code_lender_master',
+                    attributes: ['lender_name']
+                }
+            ],
+            where: { approval_status: "Approved" }
         });
 
         return res.status(201).json({ success: true, data: tranchemain });

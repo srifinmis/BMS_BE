@@ -11,18 +11,19 @@ const models = initModels(sequelize);
 const { lender_master, sanction_details, tranche_details, repayment_schedule, payment_details } = models;
 
 exports.generateRepaymentScheduleReport = async (req, res) => {
-    const { banks = "all", sanctions = "all", tranches = "all", format = "excel" } = req.body;
+    const { banks = [], sanctions = [], tranches = [], format } = req.body;
     console.log("Repayment Schedule backend: ", banks, sanctions, tranches, format)
 
     try {
         const whereClause = {};
-        if (banks !== 'all') {
-            whereClause.lender_code = { [Op.in]: banks };
+        if (banks !== 'all' && banks.length > 0) {
+            whereClause['$tranche.bank_name$'] = { [Op.in]: banks };
+
         }
-        if (sanctions !== 'all') {
-            whereClause['$sanction.sanction_id$'] = { [Op.in]: sanctions };
+        if (sanctions !== 'all' && sanctions.length > 0) {
+            whereClause['$tranche.sanction.sanction_id$'] = { [Op.in]: sanctions };
         }
-        if (tranches !== 'all') {
+        if (tranches !== 'all' && tranches.length > 0) {
             whereClause.tranche_id = { [Op.in]: tranches };
         }
 
@@ -33,34 +34,30 @@ exports.generateRepaymentScheduleReport = async (req, res) => {
                     model: tranche_details,
                     as: 'tranche',
                     attributes: ['tranche_id', "tranche_amount"],
-                },
-                {
-                    model: sanction_details,
-                    as: 'sanction',
-                    attributes: ['sanction_id'],
                     include: [
                         {
-                            model: lender_master,
-                            as: 'lender_code_lender_master',
-                            attributes: ['lender_code', 'lender_name']
+                            model: sanction_details,
+                            as: 'sanction',
+                            attributes: ['sanction_id'],
+                            include: [
+                                {
+                                    model: lender_master,
+                                    as: 'lender_code_lender_master',
+                                    attributes: ['lender_code', 'lender_name']
+                                }
+                            ]
                         }
                     ]
                 }
-            ],
-            raw: true
+            ]
         });
-        // Fetch all relevant payments for the due dates
+
         const trancheIds = [...new Set(data.map(d => d.tranche_id))];
         const dueDates = [...new Set(
             data
-                .filter(d => d.due_date)
-                .map(d => {
-                    const dt = new Date(d.due_date);
-                    return isNaN(dt) ? null : dt.toISOString().split('T')[0];
-                })
+                .map(d => d.due_date ? new Date(d.due_date).toISOString().split('T')[0] : null)
                 .filter(Boolean) // remove nulls
-            )];
-
+        )];
 
         const payments = await payment_details.findAll({
             where: {
@@ -79,27 +76,21 @@ exports.generateRepaymentScheduleReport = async (req, res) => {
         // Create a lookup map
         const paymentMap = {};
         payments.forEach(p => {
-            const paymentDate = new Date(p.payment_date);
-            if (!isNaN(paymentDate)) {
-                const key = `${p.tranche_id}_${new Date(paymentDate).toISOString().split('T')[0]}`;
-                paymentMap[key] = parseFloat(p.total_payment || 0);
-            }
+            const dateKey = new Date(p.payment_date).toISOString().split('T')[0];
+            paymentMap[`${p.tranche_id}_${dateKey}`] = parseFloat(p.total_payment || 0);
         });
 
         // Append Loan Outstanding to each row
         const result = data.map(row => {
-            const dueDateStr = row.due_date ? new Date(row.due_date).toISOString().split('T')[0] : '';
-            const key = `${row.tranche_id}_${dueDateStr}`;
-            const paymentMade = paymentMap[key] || 0;
-            const loanOutstanding = parseFloat(row['tranche.tranche_amount'] || 0) - paymentMade;
+            const dueDate = row.due_date ? new Date(row.due_date).toISOString().split('T')[0] : '';
+            const paymentMade = paymentMap[`${row.tranche_id}_${dueDate}`] || 0;
+            const loanOutstanding = parseFloat(row.tranche?.tranche_amount || 0) - paymentMade;
 
             return {
-                ...row,
+                ...row.toJSON(),
                 loan_outstanding: loanOutstanding
             };
         });
-
-
 
         console.log("Repayment Schedule fetching: ", result)
 
@@ -213,7 +204,7 @@ exports.generateRepaymentScheduleReport = async (req, res) => {
 
             // === Finalize and Send ===
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            res.setHeader('Content-Disposition', 'attachment; filename=Repayment_Schedule_Report.xlsx');
+            res.setHeader('Content-Disposition', 'attachment; filename=RepaymentSchedule_Report.xlsx');
             await workbook.xlsx.write(res);
             res.end();
         }
@@ -223,7 +214,7 @@ exports.generateRepaymentScheduleReport = async (req, res) => {
             const doc = new PDFDocument({ margin: 20, size: 'A4', layout: 'landscape' });
 
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', 'attachment; filename=Repayment_Schedule_Report.pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=RepaymentSchedule_Report.pdf');
             doc.pipe(res);
 
             const headerWidth = 500;
@@ -372,7 +363,7 @@ exports.generateRepaymentScheduleReport = async (req, res) => {
             // Convert to buffer and send response
             const buffer = await Packer.toBuffer(doc);
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-            res.setHeader('Content-Disposition', 'attachment; filename=Repayment_Schedule_Report.docx');
+            res.setHeader('Content-Disposition', 'attachment; filename=RepaymentSchedule_Report.docx');
             res.send(buffer);
         }
 

@@ -8,7 +8,7 @@ const initModels = require('../../models/init-models');
 
 require('dotenv').config();
 const models = initModels(sequelize);
-const { roc_forms, sanction_details } = models;
+const { roc_forms, sanction_details, lender_master } = models;
 
 exports.generateRocChargeCreationReport = async (req, res) => {
     const { fromDate, toDate, lenders, format, sortBy } = req.body;
@@ -340,6 +340,12 @@ exports.getroclenders = async (req, res) => {
         const roc = await roc_forms.findAll({
             attributes: [
                 "lender_code", "sanction_id"
+            ], include: [
+                {
+                    model: lender_master,
+                    as: 'lender_code_lender_master',
+                    attributes: ['lender_code', 'lender_name']
+                }
             ]
         });
 
@@ -349,8 +355,6 @@ exports.getroclenders = async (req, res) => {
         return res.status(500).json({ success: false, message: "Server Error", error: error.message });
     }
 }
-
-
 
 exports.generateRocSatisfactionChargeReport = async (req, res) => {
     const { fromDate, toDate, lenders, format, sortBy } = req.body;
@@ -411,9 +415,9 @@ exports.generateRocSatisfactionChargeReport = async (req, res) => {
             { header: 'Sanction No.', key: 'sanction_id', width: 20 },
             { header: 'Sanction Amount (In RS)', key: 'sanction.sanction_amount', width: 25 },
             { header: 'Sanction Date', key: 'sanction.sanction_date', width: 20 },
-            { header: 'Loan Closure Date', key: 'loan_date' },
+            { header: 'Loan Closure Date', key: 'date_of_filing_satisfaction' },
             { header: 'Due Date of Filing', key: 'due_date_charge_creation', width: 25 },
-            { header: 'Actual Date of Filing', key: 'due_date', width: 25 }
+            { header: 'Actual Date of Filing', key: 'due_date_satisfaction', width: 25 }
         ];
 
         // === EXCEL FORMAT ===
