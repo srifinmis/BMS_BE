@@ -46,7 +46,6 @@ const sendMail = async (to, cc, subject, text) => {
 //     console.log("Data getting: ", alert_id, sanction_id, tranche_id, alert_time, alert_start_date, alert_end_date, alert_frequency, cron_expression, to_addr, cc_addr);
 //     const now = new Date();
 
-
 //     //
 
 //     // Convert email addresses into arrays, trimming spaces
@@ -241,3 +240,4 @@ exports.startCronJob = async (alert_id, sanction_id, tranche_id, alert_time, ale
 
     console.log(`Cron job started for alert ID: ${alert_id} with expression: ${cron_expression}`);
 };
+

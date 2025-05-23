@@ -39,6 +39,10 @@ const getMasterReport = async (req, res) => {
       LEFT JOIN repayment_schedule rs ON td.tranche_id = rs.tranche_id
       ORDER BY TRIM(lm.lender_name), TRIM(sd.sanction_id), TRIM(td.tranche_id);
     `;
+    // Execute the query
+    if (!query || query.length === 0) {
+      return res.status(404).json({ message: 'No records found for the selected filters.' });
+    }
 
     const [results] = await sequelize.query(query);
     if (!results.length) return res.status(404).send('No data found for the report');
@@ -53,19 +57,19 @@ const getMasterReport = async (req, res) => {
       monthHeaders.push(startMonth.format('MMM-YY'));
       startMonth.add(1, 'month');
     }
-    
+
     const headerIndex = (title) => staticHeaders.findIndex(h => h === title);
     const staticHeaders = [
-      'Name of the Lender', 'Facility\nType', 'Sanction\nNo.', 'Sanction\nDate', 'Sanction\nAmount\n(Rs.)', 'Trench\nNo.', 'Date of\nAvailment', 'Drawdown\nAmount\n(Rs.)', 
-      'Un-Drawdown\nAmount\n(Rs.)', 'Tranche\nOutstanding\n31-Mar-25 (Rs.)', 'Rate of\nInterest\nP. A', 'Interest\nType', 'If Floating, Interest Condition', 'MCLR /\nInterest\nReset', 
-      'Repayment\nTerms', 'Moratorium', 'Repayment Date', 'Loan\nClosure\nDate', 'Principal\nRepayment', 'Interest\nPayment', 'Book\nDebts\nFrequency', 'Book\nDebts\nMargin', 'Cash\nDeposit\nMargin', 
+      'Name of the Lender', 'Facility\nType', 'Sanction\nNo.', 'Sanction\nDate', 'Sanction\nAmount\n(Rs.)', 'Trench\nNo.', 'Date of\nAvailment', 'Drawdown\nAmount\n(Rs.)',
+      'Un-Drawdown\nAmount\n(Rs.)', 'Tranche\nOutstanding\n31-Mar-25 (Rs.)', 'Rate of\nInterest\nP. A', 'Interest\nType', 'If Floating, Interest Condition', 'MCLR /\nInterest\nReset',
+      'Repayment\nTerms', 'Moratorium', 'Repayment Date', 'Loan\nClosure\nDate', 'Principal\nRepayment', 'Interest\nPayment', 'Book\nDebts\nFrequency', 'Book\nDebts\nMargin', 'Cash\nDeposit\nMargin',
       'Tenure\n(In Months)', 'No. of\nInstallments\nLeft', 'Loan\nStatus', ...monthHeaders, 'Total', '', 'Processing\nFee %', 'Processing\nFee\nAmount',
       'Processing\nFee per\nMonth', 'Processing\nFee\nAnnulised', '', 'Tranche\nOutstanding\n31-Dec-24 (Rs.)', 'Marging\nAmount', 'Book Debts\nNeed to Submit'
     ];
     const customColumnWidths = [
       40, 14, 9, 11, 15, 7, 11, 15, 16, 18, 9, 11, 28, 12, 15, 12, 22, 12, 12, 11, 11, 9, 9, 10, 12, 9,
       ...Array(monthHeaders.length).fill(12), 14, 12, 12, 14, 14, 14, 12, 18, 18, 18
-    ];  
+    ];
     worksheet.columns = customColumnWidths.map(w => ({
       width: w,
       style: { alignment: { wrapText: true, horizontal: 'center', vertical: 'middle' } }
@@ -79,16 +83,17 @@ const getMasterReport = async (req, res) => {
       cell.value = staticHeaders[colNumber - 1];
       cell.font = { bold: true, name: 'Arial', size: 10 };
       cell.alignment = { wrapText: true, horizontal: 'center', vertical: 'middle' };
-      cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } 
+      cell.border = {
+        top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' }
       };
-    });  
-    
+    });
+
     const groupedByTranche = {};
     results.forEach(row => {
       const trancheKey = row.TrenchNo.trim();
       groupedByTranche[trancheKey] = row;
     });
-    
+
     const sanctionCounterMap = new Map();
     const trancheCounterMap = new Map();
     const facilityGroups = {};
@@ -105,7 +110,7 @@ const getMasterReport = async (req, res) => {
       let lastSanctionKey = null;
       const uniqueTranches = new Set();
       const rowStartIndex = worksheet.rowCount + 1;
-      
+
       for (const row of rows) {
         const trancheId = row.TrenchNo.trim();
         const lender = row.NameoftheLender.trim();
@@ -142,7 +147,7 @@ const getMasterReport = async (req, res) => {
         const rate = Number(row.RateofInterestPA || 0);
         if (!isNaN(rate) && rate > 0) {
           allInterestRates.push(rate);
-        }        
+        }
         const procFee = Number(row.ProcessingFee || 0);
         const availDate = moment(row.DateofAvailment);
 
@@ -157,11 +162,11 @@ const getMasterReport = async (req, res) => {
         const principalPaidTillMar25 = repayments
           .filter(r => moment(r.due_date).isSameOrBefore('2025-03-31'))
           .reduce((sum, r) => sum + Number(r.principal_due || 0), 0);
-          const trancheOut31Mar25 = Math.max(0, +(drawdownAmount - principalPaidTillMar25).toFixed(2));
+        const trancheOut31Mar25 = Math.max(0, +(drawdownAmount - principalPaidTillMar25).toFixed(2));
         const principalPaidTillDec24 = repayments
           .filter(r => moment(r.due_date).isSameOrBefore('2024-12-31'))
           .reduce((sum, r) => sum + Number(r.principal_due || 0), 0);
-          const trancheOut31Dec24 = Math.max(0, +(drawdownAmount - principalPaidTillDec24).toFixed(2));
+        const trancheOut31Dec24 = Math.max(0, +(drawdownAmount - principalPaidTillDec24).toFixed(2));
 
         const closureDate = availDate.clone().add(tenure, 'months');
         const processingFeeAmount = +(drawdownAmount * procFee / 100).toFixed(2);
@@ -253,7 +258,7 @@ const getMasterReport = async (req, res) => {
           marginAmount,
           bookDebtsToSubmit
         ];
-    
+
         const dataRow = worksheet.addRow(rowData);
         dataRow.height = 15;
         dataRow.font = { name: 'Arial', size: 10 };
@@ -261,12 +266,12 @@ const getMasterReport = async (req, res) => {
         dataRow.eachCell(cell => {
           cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
         });
-    
+
         lastLender = lender;
         lastSanctionKey = sanctionKey;
         uniqueTranches.add(trancheId);
       }
-    
+
       // Add subtotal for this facility group
       const lastRows = worksheet.getRows(rowStartIndex, uniqueTranches.size);
       const subtotalRow = [];
@@ -281,7 +286,7 @@ const getMasterReport = async (req, res) => {
           .filter(v => typeof v === 'number' && !isNaN(v));
         const total = valid.reduce((acc, val) => acc + val, 0);
         return valid.length ? +(total / valid.length).toFixed(2) : '';
-      };      
+      };
       subtotalRow[0] = `Sub-Total : ${facilityType}`;
       subtotalRow[headerIndex('Sanction\nAmount\n(Rs.)')] = sum(headerIndex('Sanction\nAmount\n(Rs.)') + 1);
       subtotalRow[headerIndex('Drawdown\nAmount\n(Rs.)')] = sum(headerIndex('Drawdown\nAmount\n(Rs.)') + 1);
@@ -301,7 +306,7 @@ const getMasterReport = async (req, res) => {
           subtotalRow[colIdx] = sum(colIdx + 1); // ExcelJS uses 1-based indexing
         }
       });
-    
+
       const rowObj = worksheet.addRow(subtotalRow);
       subtotalRowsForGrandTotal.push(rowObj); // save for grand total
       rowObj.font = { bold: true, name: 'Arial', size: 10 };
@@ -343,7 +348,7 @@ const getMasterReport = async (req, res) => {
     };
     // Columns to sum
     [
-      'Sanction\nAmount\n(Rs.)', 'Drawdown\nAmount\n(Rs.)', 'Un-Drawdown\nAmount\n(Rs.)', 'Tranche\nOutstanding\n31-Mar-25 (Rs.)', 'Total', 'Processing\nFee\nAmount', 
+      'Sanction\nAmount\n(Rs.)', 'Drawdown\nAmount\n(Rs.)', 'Un-Drawdown\nAmount\n(Rs.)', 'Tranche\nOutstanding\n31-Mar-25 (Rs.)', 'Total', 'Processing\nFee\nAmount',
       'Processing\nFee per\nMonth', 'Processing\nFee\nAnnulised', 'Tranche\nOutstanding\n31-Dec-24 (Rs.)', 'Marging\nAmount', 'Book Debts\nNeed to Submit'
     ].forEach(title => {
       const idx = headerIndex(title) + 1;
@@ -371,8 +376,8 @@ const getMasterReport = async (req, res) => {
 
     worksheet.columns.forEach((col, index) => {
       const header = staticHeaders[index] || '';
-      const currencyHeaders = [ 'Sanction\nAmount\n(Rs.)', 'Drawdown\nAmount\n(Rs.)', 'Un-Drawdown\nAmount\n(Rs.)', 'Tranche\nOutstanding\n31-Mar-25 (Rs.)', 'Processing\nFee\nAmount', 
-        'Processing\nFee per\nMonth', 'Processing\nFee\nAnnulised', 'Tranche\nOutstanding\n31-Dec-24 (Rs.)', 'Marging\nAmount', 'Book Debts\nNeed to Submit', 'Total' ];
+      const currencyHeaders = ['Sanction\nAmount\n(Rs.)', 'Drawdown\nAmount\n(Rs.)', 'Un-Drawdown\nAmount\n(Rs.)', 'Tranche\nOutstanding\n31-Mar-25 (Rs.)', 'Processing\nFee\nAmount',
+        'Processing\nFee per\nMonth', 'Processing\nFee\nAnnulised', 'Tranche\nOutstanding\n31-Dec-24 (Rs.)', 'Marging\nAmount', 'Book Debts\nNeed to Submit', 'Total'];
       const isMonthlyHeader = /^[A-Za-z]{3}-\d{2}$/i.test(header);
       const isCurrency = header.includes('(Rs.)') || header.includes('Amount') || header.includes('Fee') || currencyHeaders.includes(header) || isMonthlyHeader;
       if (isCurrency) {
@@ -390,5 +395,5 @@ const getMasterReport = async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 };
-  
-module.exports = { getMasterReport};
+
+module.exports = { getMasterReport };

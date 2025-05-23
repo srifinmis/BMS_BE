@@ -72,8 +72,25 @@ exports.uploadRepaymentSchedule = async (req, res) => {
 };
 
 exports.repaymentLenders = async (req, res) => {
-    const datagot = req.body;
+    const flag = req.query.flag;
     try {
+        if (flag == 1 || flag === "1") {
+            // Fetch from repayment_schedule + get bank_name from tranche_details
+            const tranchemain = await repayment_schedule.findAll({
+                attributes: ["tranche_id", "sanction_id", "lender_code"],
+                include: [
+                    {
+                        model: tranche_details,
+                        as: 'tranche',
+                        attributes: ['bank_name'],
+                        required: true
+                    }
+                ],
+                where: { approval_status: "Approved" }
+            });
+
+            return res.status(201).json({ success: true, data: tranchemain });
+        }
         const tranchemain = await repayment_schedule.findAll({
             attributes: [
                 "tranche_id", "sanction_id", "lender_code"
@@ -86,6 +103,7 @@ exports.repaymentLenders = async (req, res) => {
             ],
             where: { approval_status: "Approved" }
         });
+
 
         return res.status(201).json({ success: true, data: tranchemain });
     } catch (error) {

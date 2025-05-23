@@ -32,8 +32,11 @@ exports.almreport = async (req, res) => {
         replacements: { date },
         type: sequelize.QueryTypes.SELECT,
       }
-    ); 
-
+    );
+    
+    if (!result || result.length === 0) {
+      return res.status(404).json({ message: 'No records found for the selected filters.' });
+    }
     const rows = result;
     const totalPrincipal = rows.reduce((sum, row) => sum + Number(row.principal_due), 0);
     let weightedMonthSum = 0;
@@ -56,12 +59,12 @@ exports.almreport = async (req, res) => {
     sheet.addRow([]);
     sheet.mergeCells('A5:E5');
     const titleRow = sheet.getCell('A5');
-    titleRow.value = `Outstanding as on ${moment(date).format( 'DD-MMM-YY' )} `;
+    titleRow.value = `Outstanding as on ${moment(date).format('DD-MMM-YY')} `;
     titleRow.alignment = { horizontal: 'center' };
     titleRow.font = { bold: true, name: 'Arial' };
     sheet.addRow([]);
     // Column Headers
-    const headerRow = sheet.addRow([ 'Period', 'Month', 'Principal Due (In ₹)', 'Weight', 'Weighted Avg. Month', ]);
+    const headerRow = sheet.addRow(['Period', 'Month', 'Principal Due (In ₹)', 'Weight', 'Weighted Avg. Month',]);
     headerRow.font = { bold: true, name: 'Arial', size: 11 };
     headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
     headerRow.eachCell((cell) => {
@@ -73,7 +76,7 @@ exports.almreport = async (req, res) => {
       const weight = Number(row.principal_due) / totalPrincipal;
       const weightedAvg = weight * (index + 1);
       weightedMonthSum += weightedAvg;
-  
+
       const newRow = sheet.addRow([
         row.period,
         index + 1,
@@ -89,18 +92,18 @@ exports.almreport = async (req, res) => {
     });
 
     // Totals Row
-    const totalRow = sheet.addRow([ 'Total', '', totalPrincipal.toFixed(2), '', weightedMonthSum.toFixed(2), ]);
+    const totalRow = sheet.addRow(['Total', '', totalPrincipal.toFixed(2), '', weightedMonthSum.toFixed(2),]);
     totalRow.font = { bold: true, name: 'Arial', size: 10 };
     totalRow.alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.eachCell((cell) => {
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' }, };
     });
 
-    sheet.columns = [ { width: 12 }, { width: 10 }, { width: 22 }, { width: 10 }, { width: 22 }, ];
+    sheet.columns = [{ width: 12 }, { width: 10 }, { width: 22 }, { width: 10 }, { width: 22 },];
 
     // Set response headers
-    res.setHeader( 'Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' );
-    res.setHeader( 'Content-Disposition', `attachment; filename=alm-report-${moment(date).format('YYYY-MM-DD')}.xlsx` );
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=alm-report-${moment(date).format('YYYY-MM-DD')}.xlsx`);
 
     await workbook.xlsx.write(res);
     res.end();

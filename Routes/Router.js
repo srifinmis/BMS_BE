@@ -18,7 +18,7 @@ const { lenderCreate,
 const { getLoadData } = require("../Controller/borrowingLoadController");
 const { cronalert } = require("../Controller/alertTriggerController");
 const { generateCronExpression } = require("../Controller/cronExpressionController");
-const { alertData } = require("../Controller/alertApiController");
+const { alertData, AlertPending, AlertApprove, AlertReject, AlertView, AlertFetch } = require("../Controller/alertApiController");
 
 // Sanction
 const { sanctionApprove, sanctionCheck } = require("../Controller/sanctionController");
@@ -29,6 +29,7 @@ const { sanctionReject } = require("../Controller/sanctionController");
 const { sanctionFetch } = require("../Controller/sanctionController");
 const { sanctionPending } = require("../Controller/sanctionController");
 const { sanctionCreate } = require("../Controller/sanctionController");
+
 
 // ROC Form
 const { sanctionId, rocValidate } = require("../Controller/rocformController")
@@ -212,6 +213,11 @@ router.post("/cron/create", generateCronExpression)
 
 //repayment 
 router.get("/alert/findall", alertData);
+router.get("/alert/fetchAll", AlertFetch);
+router.get("/alert/details", AlertView);
+router.post("/alert/Approve", AlertApprove);
+router.post("/alert/reject", AlertReject);
+router.get("/alert/pendingData", AlertPending);
 
 //upload
 router.post("/upload-s3", uploadFileToS3);
@@ -240,7 +246,8 @@ router.post("/schedule/Reject", scheduleReject);
 router.get("/repaymentschedule/lenders", repaymentLenders)
 
 
-//reports
+//reports API'S
+
 router.post('/generate-lender-master', generateLenderMasterReport);
 router.post('/generate-sanction-master', generateSanctionDetailsReport);
 router.post("/generate-Rocchangecreation", generateRocChargeCreationReport);
@@ -255,8 +262,8 @@ router.post("/generate-EffectiveInterestofReport", generateEffectiveInterestofRe
 router.post("/generate-RepaymentScheduleReport", generateRepaymentScheduleReport);
 router.post("/generate-ALMReport", almreport);
 router.post("/generate-MasterReport", getMasterReport);
-// router.post("/drawdowns", generateDrawdownReport);
-// router.post("/drawdowns-consolidated", generateDrawdownReportconsolidated);
+router.post("/drawdowns", generateDrawdownReport);
+router.post("/drawdowns-consolidated", generateDrawdownReportconsolidated);
 
 // report get Lendercodes apis
 router.get("/generate/roc/lendercodes", getroclenders)

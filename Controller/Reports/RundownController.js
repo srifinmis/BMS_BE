@@ -32,6 +32,9 @@ exports.generateRundownReport = async (req, res) => {
                 }
             ]
         });
+        if (!data || data.length === 0) {
+            return res.status(404).json({ message: 'No records found for the selected filters.' });
+        }
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Rundown Report');

@@ -29,6 +29,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.0",
     "pdfkit": "^0.17.0",
+    "pdfkit-table": "^0.1.99",
     "pg": "^8.14.1",
     "sequelize": "^6.37.7",
     "sequelize-auto": "^0.8.8",

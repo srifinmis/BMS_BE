@@ -1,7 +1,8 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
-const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType } = require('docx');
+const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, AlignmentType, PageOrientation } = require('docx');
+// const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType } = require('docx');
 const { Op } = require('sequelize');
 const { sequelize } = require('../../config/db');
 const initModels = require('../../models/init-models');
@@ -193,12 +194,12 @@ exports.generateDatewiseRepaymentReport = async (req, res) => {
         }
         // === PDF FORMAT ===
         else if (format === 'pdf') {
-            const doc = new PDFDocument({ margin: 20, size: 'A4' });
+            const doc = new PDFDocument({ margin: 20, size: 'A4', layout: 'landscape' });
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', 'attachment; filename=DateWise_Repayment_Statement_Report.pdf');
             doc.pipe(res);
 
-            const headerWidth = 350;
+            const headerWidth = 500;
             const pageCenter = doc.page.width / 2;
             const headerX = pageCenter - headerWidth / 2;
 
@@ -207,47 +208,40 @@ exports.generateDatewiseRepaymentReport = async (req, res) => {
                     width: headerWidth,
                     align: 'center'
                 });
-                doc.moveDown(0.5); // Optional: adjust vertical gap
+                doc.moveDown(0.5);
             });
-            // doc.moveDown().fontSize(10).text(`Report: ${REPORT_TITLE}`, headerX, doc.y, {
-            //     width: headerWidth,
-            //     align: 'center'
-            // });
+
             doc.moveDown(2);
 
-            const pageWidth = doc.page.width;
-            const pageMargins = doc.page.margins.left + doc.page.margins.right;
-            const availableWidth = pageWidth - pageMargins;
+            // Layout constants
             const padding = 2;
             const rowHeight = 40;
+            const startX = doc.page.margins.left;
+            const availableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+            // Step 1: Calculate natural column width proportion
             const charWidth = 6;
 
-            // Step 1: Calculate natural column widths
-            let naturalWidths = columns.map(col => {
+            // Estimate content length (max(header, values.length)) for proportional layout
+            const contentLengths = columns.map(col => {
                 const headerLen = col.header.length;
                 const maxDataLen = Math.max(...data.map(row => {
                     const keys = col.key.split('.');
                     const value = keys.length === 2 ? row[`${keys[0]}.${keys[1]}`] || row[keys.join('.')] : row[col.key];
                     return `${value ?? ''}`.length;
                 }));
-                const maxLen = Math.max(headerLen, maxDataLen);
-                return maxLen * charWidth + padding * 2;
+                return Math.max(headerLen, maxDataLen);
             });
 
-            // Step 2: Scale if total width exceeds A4
-            const totalNaturalWidth = naturalWidths.reduce((sum, w) => sum + w, 0);
-            let columnWidths = [...naturalWidths];
+            const totalContentLength = contentLengths.reduce((a, b) => a + b, 0);
 
-            if (totalNaturalWidth > availableWidth) {
-                const scale = availableWidth / totalNaturalWidth;
-                columnWidths = naturalWidths.map(w => w * scale);
-            }
+            // Step 2: Scale to availableWidth
+            const columnWidths = contentLengths.map(len => (len / totalContentLength) * availableWidth);
 
-            const startX = doc.page.margins.left;
+            // Step 3: Draw Table Header
+            let x = startX;
             let y = doc.y;
 
-            // Step 3: Draw Header
-            let x = startX;
             columns.forEach((col, i) => {
                 doc.rect(x, y, columnWidths[i], rowHeight).stroke();
                 doc.font('Helvetica-Bold').fontSize(10).text(col.header, x + padding, y + 6, {
@@ -259,102 +253,128 @@ exports.generateDatewiseRepaymentReport = async (req, res) => {
 
             y += rowHeight;
 
-            // Step 4: Draw Data Rows
+            // Step 4: Draw Table Rows
             data.forEach(row => {
                 x = startX;
+
                 columns.forEach((col, i) => {
                     const keys = col.key.split('.');
                     const value = keys.length === 2 ? row[`${keys[0]}.${keys[1]}`] || row[keys.join('.')] : row[col.key];
                     const cellText = `${value ?? ''}`;
+
                     doc.rect(x, y, columnWidths[i], rowHeight).stroke();
                     doc.font('Helvetica').fontSize(10).text(cellText, x + padding, y + 6, {
                         width: columnWidths[i] - padding * 2,
                         align: 'center'
                     });
+
                     x += columnWidths[i];
                 });
 
                 y += rowHeight;
+
+                // Check for page break
                 if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
-                    doc.addPage();
-                    y = doc.y;
+                    doc.addPage({ layout: 'landscape', size: 'A4' });
+                    y = doc.page.margins.top;
+
+                    // Repeat Header on New Page
+                    x = startX;
+                    columns.forEach((col, i) => {
+                        doc.rect(x, y, columnWidths[i], rowHeight).stroke();
+                        doc.font('Helvetica-Bold').fontSize(10).text(col.header, x + padding, y + 6, {
+                            width: columnWidths[i] - padding * 2,
+                            align: 'center'
+                        });
+                        x += columnWidths[i];
+                    });
+
+                    y += rowHeight;
                 }
             });
 
             doc.end();
         }
-        // === WORD FORMAT ===
-        else if (format === 'word') {
-            // Helper function to get value from nested keys
-            function getValue(obj, path) {
-                if (!path) return ''; // Return empty string if no path is provided
-                if (obj[path] !== undefined) return obj[path]; // Handle direct keys
-                return path.split('.').reduce((acc, part) => acc && acc[part], obj) ?? ''; // Handle nested keys
-            }
 
-            // Table header row (static, just column names)
-            const tableRows = [
-                new TableRow({
-                    children: columns.map(col =>
-                        new TableCell({
-                            children: [new Paragraph({
-                                text: col.header,
-                                bold: true
-                            })],
-                            width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }  // Width as percentage of total document width
-                        })
-                    )
+        // === WORD FORMAT ===
+
+        else if (format === 'word') {
+            const tableRows = [];
+
+            // Add header row with styling
+            const headerCells = columns.map(col =>
+                new TableCell({
+                    children: [new Paragraph({ text: col.header, bold: true, alignment: AlignmentType.CENTER })],
+                    shading: { fill: 'D9D9D9' }, // light gray background for header
+                    verticalAlign: 'center',
+                    width: { size: 1000, type: WidthType.DXA }
                 })
-            ];
+            );
+
+            tableRows.push(new TableRow({ children: headerCells }));
 
             // Add data rows
-            data.forEach((row, index) => {
-                // Debugging: Check the row object and the columns keys
-                // console.log(`Processing Row ${index + 1}:`, row);
-
-                const cells = columns.map(col => {
-                    const value = getValue(row, col.key);
-
-                    // Debugging: Output the value for each cell
-                    // console.log(`Row ${index + 1}, Column: ${col.header}, Value: ${value}`);
-
-                    // Ensure that the value is converted to a string if it's a number or other types
+            data.forEach(row => {
+                const dataCells = columns.map(col => {
+                    const keys = col.key.split('.');
+                    const text = keys.length === 3 ? row[`${keys[0]}.${keys[1]}.${keys[2]}`]
+                        : keys.length === 2 ? row[`${keys[0]}.${keys[1]}`]
+                            : row[col.key];
                     return new TableCell({
-                        children: [new Paragraph({
-                            text: String(value ?? '')  // Ensure null/undefined are converted to an empty string
-                        })],
-                        width: { size: 100 / columns.length, type: WidthType.PERCENTAGE } // Width as percentage of total document width
+                        children: [new Paragraph(String(text || ''))],
+                        verticalAlign: 'center',
+                        width: { size: 1000, type: WidthType.DXA }
                     });
                 });
-
-                // Push the row with the constructed cells
-                tableRows.push(new TableRow({ children: cells }));
+                tableRows.push(new TableRow({ children: dataCells }));
             });
 
-            // Create Word document
+            // Create the document
             const doc = new Document({
                 sections: [{
+                    properties: { page: { margin: { top: 700, right: 700, bottom: 700, left: 700 }, size: { orientation: PageOrientation.LANDSCAPE } } },
                     children: [
-                        // Add header information (organization name, address, etc.)
-                        ...headerInfo.map(line => new Paragraph({ text: line, alignment: AlignmentType.CENTER })),
-
-                        // Add a spacer paragraph
-                        new Paragraph({ text: '' }),
-
-                        // Add the table to the document
-                        new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } })  // Ensure table spans full width
-                    ]
-                }]
+                        new Paragraph({
+                            text: ORG_NAME,
+                            heading: "Title",
+                            alignment: AlignmentType.CENTER,
+                            spacing: { after: 200 }
+                        }),
+                        new Paragraph({
+                            text: ORG_ADDRESS,
+                            alignment: AlignmentType.CENTER,
+                            spacing: { after: 200 }
+                        }),
+                        new Paragraph({
+                            text: REPORT_TITLE,
+                            heading: "Heading1",
+                            alignment: AlignmentType.CENTER,
+                            spacing: { after: 400 }
+                        }),
+                        new Table({
+                            rows: tableRows,
+                            width: {
+                                size: 100,
+                                type: WidthType.PERCENTAGE,
+                            },
+                            borders: {
+                                top: { style: 'single', size: 1 },
+                                bottom: { style: 'single', size: 1 },
+                                left: { style: 'single', size: 1 },
+                                right: { style: 'single', size: 1 },
+                                insideHorizontal: { style: 'single' },
+                                insideVertical: { style: 'single', size: 1 },
+                            },
+                        }),
+                    ],
+                }],
             });
 
-            // Convert to buffer and send response
             const buffer = await Packer.toBuffer(doc);
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
             res.setHeader('Content-Disposition', 'attachment; filename=DateWise_Repayment_Statement_Report.docx');
             res.send(buffer);
         }
-
-
         // === INVALID FORMAT ===
         else {
             res.status(400).json({ error: 'Invalid format selected' });
@@ -371,12 +391,11 @@ exports.generateDatewiseRepaymentReport = async (req, res) => {
 
 
 exports.generateDailyRepaymentReport = async (req, res) => {
-    const { fromDate, toDate, lenders, format, sortBy } = req.body;
-    console.log("Daily backend: ", fromDate, toDate, lenders, format, sortBy)
+    const { fromDate, toDate, date, lenders, format, sortBy } = req.body;
+    console.log("Daily backend: ", fromDate, toDate, date, lenders, format, sortBy)
 
     try {
-
-        const selectedDate = new Date(fromDate);
+        const selectedDate = new Date(date);
         const startOfDay = new Date(selectedDate);
         startOfDay.setHours(0, 0, 0, 0);
 
@@ -395,7 +414,7 @@ exports.generateDailyRepaymentReport = async (req, res) => {
             whereClause.lender_code = { [Op.in]: lenders };
         }
 
-        const sortBy = (req.query.sortBy || '').toLowerCase().trim();
+        const sortBy = "lender_code";
 
         const validSortFields = ['lender_code', 'due_date'];
         const orderClause = validSortFields.includes(sortBy) ? [[sortBy, 'ASC']] : undefined;
@@ -548,26 +567,29 @@ exports.generateDailyRepaymentReport = async (req, res) => {
         }
         // === PDF FORMAT ===
         else if (format === 'pdf') {
-            const doc = new PDFDocument({ margin: 20, size: 'A4' });
+            const PDFDocument = require('pdfkit');
+            const doc = new PDFDocument({
+                margin: 20,
+                size: 'A4',
+                layout: 'landscape' // 👈 Enable landscape orientation
+            });
+
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', 'attachment; filename=Daily_Repayment_Statement_Report.pdf');
             doc.pipe(res);
 
-            const headerWidth = 350;
+            const headerWidth = 500; // Adjusted for landscape width
             const pageCenter = doc.page.width / 2;
             const headerX = pageCenter - headerWidth / 2;
 
+            // Render header
             headerInfo.forEach(line => {
                 doc.fontSize(12).text(line, headerX, doc.y, {
                     width: headerWidth,
                     align: 'center'
                 });
-                doc.moveDown(0.5); // Optional: adjust vertical gap
+                doc.moveDown(0.5);
             });
-            // doc.moveDown().fontSize(10).text(`Report: ${REPORT_TITLE}`, headerX, doc.y, {
-            //     width: headerWidth,
-            //     align: 'center'
-            // });
             doc.moveDown(2);
 
             const pageWidth = doc.page.width;
@@ -589,7 +611,7 @@ exports.generateDailyRepaymentReport = async (req, res) => {
                 return maxLen * charWidth + padding * 2;
             });
 
-            // Step 2: Scale if total width exceeds A4
+            // Step 2: Scale if total width exceeds page
             const totalNaturalWidth = naturalWidths.reduce((sum, w) => sum + w, 0);
             let columnWidths = [...naturalWidths];
 
@@ -601,7 +623,7 @@ exports.generateDailyRepaymentReport = async (req, res) => {
             const startX = doc.page.margins.left;
             let y = doc.y;
 
-            // Step 3: Draw Header
+            // Step 3: Draw Header Row
             let x = startX;
             columns.forEach((col, i) => {
                 doc.rect(x, y, columnWidths[i], rowHeight).stroke();
@@ -632,7 +654,7 @@ exports.generateDailyRepaymentReport = async (req, res) => {
                 y += rowHeight;
                 if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
                     doc.addPage();
-                    y = doc.y;
+                    y = doc.page.margins.top; // Reset y for new page
                 }
             });
 
@@ -640,14 +662,16 @@ exports.generateDailyRepaymentReport = async (req, res) => {
         }
         // === WORD FORMAT ===
         else if (format === 'word') {
+            const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, AlignmentType, PageOrientation } = require("docx");
+
             // Helper function to get value from nested keys
             function getValue(obj, path) {
-                if (!path) return ''; // Return empty string if no path is provided
-                if (obj[path] !== undefined) return obj[path]; // Handle direct keys
-                return path.split('.').reduce((acc, part) => acc && acc[part], obj) ?? ''; // Handle nested keys
+                if (!path) return '';
+                if (obj[path] !== undefined) return obj[path];
+                return path.split('.').reduce((acc, part) => acc && acc[part], obj) ?? '';
             }
 
-            // Table header row (static, just column names)
+            // Table header row
             const tableRows = [
                 new TableRow({
                     children: columns.map(col =>
@@ -656,55 +680,54 @@ exports.generateDailyRepaymentReport = async (req, res) => {
                                 text: col.header,
                                 bold: true
                             })],
-                            width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }  // Width as percentage of total document width
+                            width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }
                         })
                     )
                 })
             ];
 
             // Add data rows
-            data.forEach((row, index) => {
-
+            data.forEach((row) => {
                 const cells = columns.map(col => {
                     const value = getValue(row, col.key);
-
-                    // Ensure that the value is converted to a string if it's a number or other types
                     return new TableCell({
                         children: [new Paragraph({
-                            text: String(value ?? '')  // Ensure null/undefined are converted to an empty string
+                            text: String(value ?? '')
                         })],
-                        width: { size: 100 / columns.length, type: WidthType.PERCENTAGE } // Width as percentage of total document width
+                        width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }
                     });
                 });
 
-                // Push the row with the constructed cells
                 tableRows.push(new TableRow({ children: cells }));
             });
 
-            // Create Word document
+            // Create the document in landscape orientation
             const doc = new Document({
                 sections: [{
+                    properties: {
+                        page: {
+                            size: {
+                                orientation: PageOrientation.LANDSCAPE, // Landscape mode
+                            }
+                        }
+                    },
                     children: [
-                        // Add header information (organization name, address, etc.)
                         ...headerInfo.map(line => new Paragraph({ text: line, alignment: AlignmentType.CENTER })),
-
-                        // Add a spacer paragraph
                         new Paragraph({ text: '' }),
-
-                        // Add the table to the document
-                        new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } })  // Ensure table spans full width
+                        new Table({
+                            rows: tableRows,
+                            width: { size: 100, type: WidthType.PERCENTAGE }
+                        })
                     ]
                 }]
             });
 
-            // Convert to buffer and send response
+            // Convert to buffer and send
             const buffer = await Packer.toBuffer(doc);
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
             res.setHeader('Content-Disposition', 'attachment; filename=Daily_Repayment_Statement_Report.docx');
             res.send(buffer);
         }
-
-
         // === INVALID FORMAT ===
         else {
             res.status(400).json({ error: 'Invalid format selected' });

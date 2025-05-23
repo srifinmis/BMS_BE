@@ -13,15 +13,15 @@ const { lender_master, tranche_details, repayment_schedule, sanction_details, pa
 
 
 exports.generateEffectiveInterestRateReport = async (req, res) => {
-    const { fromDate } = req.body;
-    console.log("Daily effective backend: ", fromDate)
+    const { fromDate ,date} = req.body;
+    console.log("Daily effective backend: ", date)
     try {
-        const { fromDate } = req.body;
-        if (!fromDate) {
-            return res.status(400).json({ error: 'fromDate is required' });
+        const { date } = req.body;
+        if (!date) {
+            return res.status(400).json({ error: 'Date is required' });
         }
 
-        const selectedMonth = moment(fromDate, 'YYYY-MM-DD');
+        const selectedMonth = moment(date, 'YYYY-MM-DD');
         if (!selectedMonth.isValid()) {
             return res.status(400).json({ error: 'Invalid date provided' });
         }
@@ -37,6 +37,9 @@ exports.generateEffectiveInterestRateReport = async (req, res) => {
             },
             raw: true
         });
+        if (!sanctions || sanctions.length === 0) {
+            return res.status(404).json({ message: 'No records found for the selected filters.' });
+        }
 
         const sanctionIds = sanctions.map(s => s.sanction_id);
 
@@ -171,7 +174,7 @@ exports.generateEffectiveInterestRateReport = async (req, res) => {
         const ORG_NAME = process.env.LENDER_HEADER_LINE1 || 'SRIFIN CREDIT PRIVATE LIMITED';
         const ORG_ADDRESS = process.env.ORG_ADDRESS || 'Unit No. 509, 5th Floor, Gowra Fountainhead, Hyderabad.';
         const today = new Date().toLocaleDateString('en-GB');
-        const REPORT_TITLE = process.env.REPORT_TITLE || `Report: Effective Interest Rate as on ${fromDate}`;
+        const REPORT_TITLE = process.env.REPORT_TITLE || `Report: Effective Interest Rate as on ${date}`;
 
         const headerInfo = [ORG_NAME, '', ORG_ADDRESS, '', REPORT_TITLE, ''];
 
@@ -256,7 +259,7 @@ exports.generateEffectiveInterestRateReport = async (req, res) => {
         totalRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename=effective_interest_report.xlsx');
+        res.setHeader('Content-Disposition', 'attachment; filename=Effective_interest_report.xlsx');
         await workbook.xlsx.write(res);
         res.end();
 
