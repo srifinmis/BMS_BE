@@ -18,7 +18,7 @@ const { lenderCreate,
 const { getLoadData } = require("../Controller/borrowingLoadController");
 const { cronalert } = require("../Controller/alertTriggerController");
 const { generateCronExpression } = require("../Controller/cronExpressionController");
-const { alertData, AlertPending, AlertApprove, AlertReject, AlertView, AlertFetch } = require("../Controller/alertApiController");
+const { alertData, AlertPending, AlertApprove, AlertReject, AlertView, AlertFetch, AlertUpdate } = require("../Controller/alertApiController");
 
 // Sanction
 const { sanctionApprove, sanctionCheck } = require("../Controller/sanctionController");
@@ -215,6 +215,7 @@ router.post("/cron/create", generateCronExpression)
 router.get("/alert/findall", alertData);
 router.get("/alert/fetchAll", AlertFetch);
 router.get("/alert/details", AlertView);
+router.patch("/alert/update/:sanction_id", AlertUpdate);
 router.post("/alert/Approve", AlertApprove);
 router.post("/alert/reject", AlertReject);
 router.get("/alert/pendingData", AlertPending);

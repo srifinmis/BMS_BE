@@ -104,6 +104,166 @@ exports.AlertView = async (req, res) => {
     }
 }
 
+exports.AlertUpdate = async (req, res) => {
+    const { lender_code, sanction_id, tranche_id, alert_time, approval_status, alert_frequency, alert_trigger, created_by, to_addr, cc_addr } = req.body;
+    const data = req.body;
+    data.alert_id = null;
+    console.log("alert data: ", data);
+    const newData = data;
+    console.log("new alert data: ", newData);
+    try {
+        const JWT_SECRET = process.env.JWT_SECRET;
+        // const decoded = jwt.verify(data.updatedFormData.createdby, JWT_SECRET);
+        const decoded = jwt.verify(data.createdby, JWT_SECRET);
+        // 🔐 Global check for any pending approval record in staging
+
+        // Step 1: Check if alert configuration exists
+        const alertConfigs = await alert_management.findAll({
+            where: { lender_code, sanction_id, tranche_id }
+        });
+
+        if (!alertConfigs || alertConfigs.length === 0) {
+            return res.status(404).json({
+                status: "error",
+                message: "No alert_management records found for the given lender_code, sanction_id, and tranche_id."
+            });
+        }
+
+        const daysToSubtract = parseInt(alert_trigger?.split("-")[1]);
+        if (isNaN(daysToSubtract)) {
+            return res.status(400).json({
+                status: "error",
+                message: "Invalid alert_trigger format. Expected format 'T-<number>'."
+            });
+        }
+
+        const recordsToInsert = [];
+        const updatedFieldsSummary = [];
+
+        for (const config of alertConfigs) {
+            config.alert_id = null;
+            const alertEndDate = new Date(config.alert_end_date);
+            alertEndDate.setDate(alertEndDate.getDate() - daysToSubtract);
+
+            const [hour, minute] = alert_time.split(":").map(Number);
+
+            let cronExpression = "";
+            if (alert_frequency === "Daily") {
+                cronExpression = `${minute} ${hour} * * *`;
+            } else if (alert_frequency === "Weekly") {
+                const dayOfWeek = alertEndDate.getDay();
+                cronExpression = `${minute} ${hour} * * ${dayOfWeek}`;
+            } else {
+                continue; // Skip unsupported frequencies
+            }
+
+            const lastStaging = await alert_management_staging.findOne({
+                where: { tranche_id: config.tranche_id },
+                order: [['createdat', 'DESC']]
+            });
+
+            let updated_fields = [];
+
+            if (lastStaging) {
+                const fieldsToCompare = ["alert_end_date", "cron_expression"];
+                const newValues = {
+                    alert_end_date: alertEndDate.toISOString(),
+                    cron_expression: cronExpression,
+                };
+                fieldsToCompare.forEach(field => {
+                    const oldValue = lastStaging[field];
+                    const newValue = newValues[field];
+                    if (
+                        (typeof oldValue === 'object' && oldValue?.toISOString?.() !== newValue) ||
+                        (typeof oldValue !== 'object' && oldValue !== newValue)
+                    ) {
+                        updated_fields.push(field);
+                    }
+                });
+            } else {
+                updated_fields = ["alert_end_date", "cron_expression"];
+            }
+
+            recordsToInsert.push({
+                // alert_id: crypto.randomUUID(), // or leave undefined if it's auto-generated
+                lender_code: config.lender_code,
+                sanction_id: config.sanction_id,
+                tranche_id: config.tranche_id,
+                alert_end_date: config.alert_end_date,
+                alert_start_date: alertEndDate,
+                cron_expression: cronExpression,
+                alert_time,
+                alert_frequency,
+                alert_trigger,
+                to_addr: to_addr,
+                cc_addr: cc_addr,
+                approval_status: "Approval Pending",
+                createdby: decoded.id,
+                createdat: new Date(),
+                updated_fields: updated_fields
+            });
+
+            updatedFieldsSummary.push({
+                tranche_id: config.tranche_id,
+                updated_fields
+            });
+        }
+
+        if (recordsToInsert.length === 0) {
+            return res.status(400).json({
+                status: "error",
+                message: "No valid alert records to insert due to unsupported alert_frequency."
+            });
+        }
+
+        await sequelize.transaction(async (t) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // normalize to start of day for accurate comparison
+
+            for (const record of recordsToInsert) {
+                const alertEndDate = new Date(record.alert_end_date);
+                alertEndDate.setHours(0, 0, 0, 0);
+
+                if (alertEndDate > today) {
+                    const existingRecord = await alert_management_staging.findOne({
+                        where: {
+                            lender_code: record.lender_code,
+                            sanction_id: record.sanction_id,
+                            tranche_id: record.tranche_id,
+                            alert_end_date: record.alert_end_date
+                        },
+                        transaction: t
+                    });
+
+                    if (existingRecord) {
+                        await alert_management_staging.update(record, {
+                            where: { alert_id: existingRecord.alert_id },
+                            transaction: t
+                        });
+                    } else {
+                        await alert_management_staging.create(record, { transaction: t });
+                    }
+                } else {
+                    // Skip records with alert_end_date <= today
+                    console.log(`Skipped record with alert_end_date ${record.alert_end_date} because it is not greater than today.`);
+                }
+            }
+        });
+
+        return res.status(201).json({
+            status: "success",
+            message: `Alert CRON Records Updated Successfully.`,
+            data: recordsToInsert,
+            updated_fields_summary: updatedFieldsSummary
+        });
+
+    } catch (error) {
+        console.error("Update Error:", error);
+        return res.status(500).json({ status: "error", message: "Internal server error", error: error.message });
+    }
+};
+
+
 
 exports.AlertApprove = async (req, res) => {
     console.log("Approve Alert Details Approve Backend:", req.body);
