@@ -13,11 +13,11 @@ const models = initModels(sequelize);
 const { alert_management } = models;
 const { startCronJob } = require("./Controller/alertTriggerController");
 
+const app = express();
+
 // const axios = require('axios');
 const Router = require("./Routes/Router")
 const excelRoutes = require('./Routes/tranchExcelRoutes');
-
-const app = express();
 
 app.use(helmet()); //Secure HTTP headers
 app.use(xss());  //Prevent XSS attack

@@ -58,6 +58,19 @@ module.exports = function(sequelize, DataTypes) {
         model: 'lender_master',
         key: 'lender_code'
       }
+    },
+    alert_trigger: {
+      type: DataTypes.STRING(20),
+      allowNull: true
+    },
+    approval_status: {
+      type: DataTypes.STRING(20),
+      allowNull: true
+    },
+    createdat: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP')
     }
   }, {
     sequelize,

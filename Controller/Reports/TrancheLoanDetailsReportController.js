@@ -1,7 +1,7 @@
 const express = require('express');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
-const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType } = require('docx');
+const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, AlignmentType, PageOrientation } = require('docx');
 const { Op } = require('sequelize');
 const { sequelize } = require('../../config/db');
 const initModels = require('../../models/init-models');
@@ -273,14 +273,12 @@ exports.generateLoanTrancheDetailsReport = async (req, res) => {
 
         // === WORD FORMAT ===
         else if (format === 'word') {
-            // Helper function to get value from nested keys
             function getValue(obj, path) {
-                if (!path) return ''; // Return empty string if no path is provided
-                if (obj[path] !== undefined) return obj[path]; // Handle direct keys
-                return path.split('.').reduce((acc, part) => acc && acc[part], obj) ?? ''; // Handle nested keys
+                if (!path) return '';
+                if (obj[path] !== undefined) return obj[path];
+                return path.split('.').reduce((acc, part) => acc && acc[part], obj) ?? '';
             }
 
-            // Table header row (static, just column names)
             const tableRows = [
                 new TableRow({
                     children: columns.map(col =>
@@ -289,56 +287,54 @@ exports.generateLoanTrancheDetailsReport = async (req, res) => {
                                 text: col.header,
                                 bold: true
                             })],
-                            width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }  // Width as percentage of total document width
+                            width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }
                         })
                     )
                 })
             ];
 
-            // Add data rows
-            data.forEach((row, index) => {
-                // Debugging: Check the row object and the columns keys
-
+            data.forEach((row) => {
                 const cells = columns.map(col => {
                     const value = getValue(row, col.key);
-
-                    // Ensure that the value is converted to a string if it's a number or other types
                     return new TableCell({
                         children: [new Paragraph({
-                            text: String(value ?? '')  // Ensure null/undefined are converted to an empty string
+                            text: String(value ?? '')
                         })],
-                        width: { size: 100 / columns.length, type: WidthType.PERCENTAGE } // Width as percentage of total document width
+                        width: { size: 100 / columns.length, type: WidthType.PERCENTAGE }
                     });
                 });
 
-                // Push the row with the constructed cells
                 tableRows.push(new TableRow({ children: cells }));
             });
 
-            // Create Word document
             const doc = new Document({
                 sections: [{
+                    properties: {
+                        page: {
+                            size: {
+                                orientation: PageOrientation.LANDSCAPE
+                            },
+                            margin: {
+                                top: 720, bottom: 720, left: 720, right: 720
+                            }
+                        }
+                    },
                     children: [
-                        // Add header information (organization name, address, etc.)
                         ...headerInfo.map(line => new Paragraph({ text: line, alignment: AlignmentType.CENTER })),
-
-                        // Add a spacer paragraph
                         new Paragraph({ text: '' }),
-
-                        // Add the table to the document
-                        new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } })  // Ensure table spans full width
+                        new Table({
+                            rows: tableRows,
+                            width: { size: 100, type: WidthType.PERCENTAGE }
+                        })
                     ]
                 }]
             });
 
-            // Convert to buffer and send response
             const buffer = await Packer.toBuffer(doc);
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
             res.setHeader('Content-Disposition', 'attachment; filename=Loan_Tranche_Details_Report.docx');
             res.send(buffer);
         }
-
-
         // === INVALID FORMAT ===
         else {
             res.status(400).json({ error: 'Invalid format selected' });

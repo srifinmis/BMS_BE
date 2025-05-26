@@ -12,8 +12,6 @@ const models = initModels(sequelize);
 const { lender_master, payment_details, repayment_schedule, tranche_details, sanction_details } = models;
 
 exports.generateRundownReport = async (req, res) => {
-    // const { fromDate, toDate } = req.body;
-    // console.log("Daily backend: ", fromDate, toDate)
     try {
         const data = await repayment_schedule.findAll({
             include: [
@@ -34,6 +32,9 @@ exports.generateRundownReport = async (req, res) => {
                 }
             ]
         });
+        if (!data || data.length === 0) {
+            return res.status(404).json({ message: 'No records found for the selected filters.' });
+        }
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Rundown Report');
@@ -52,13 +53,10 @@ exports.generateRundownReport = async (req, res) => {
         // Header row
         const header = ['Name of the Lender', 'Facility Type', 'Amount in Crs', 'Type', ...sortedMonths, 'Total'];
         const headerRow = sheet.addRow(header);
-
-        // Apply bold and border to header
-        headerRow.height = 45; // Simulate padding with increased row height
-
+        headerRow.height = 45;
         headerRow.eachCell(cell => {
             cell.font = { bold: true, size: 12 };
-            cell.alignment = { vertical: 'middle', horizontal: 'center' }; // Center align
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
             cell.border = {
                 top: { style: 'thin' },
                 left: { style: 'thin' },
@@ -91,79 +89,114 @@ exports.generateRundownReport = async (req, res) => {
             grouped[key].interest[month] = (grouped[key].interest[month] || 0) + parseFloat(entry.interest_due || 0);
         });
 
+        const principalRows = [];
+        const interestRows = [];
+        const totalRows = [];
+
+        const buildRow = (lender, facility, amount, type, valuesMap, excludeAmount = false) => {
+            const row = excludeAmount ? [lender, facility, '', type] : [lender, facility, amount, type];
+            let total = 0;
+            sortedMonths.forEach(month => {
+                const val = valuesMap[month] || 0;
+                row.push(val);
+                total += val;
+            });
+            row.push(total);
+            return row;
+        };
+
+        const principalMonthTotals = {};
+        const interestMonthTotals = {};
+        const overallMonthTotals = {};
+        let principalGrandTotal = 0;
+        let interestGrandTotal = 0;
+        let overallGrandTotal = 0;
+
         for (const key in grouped) {
             const { lender, facility, amount, principal, interest } = grouped[key];
 
-            const addTypeRow = (type, valuesMap, excludeAmount = false) => {
-                const row = excludeAmount ? [lender, facility, '', type] : [lender, facility, amount, type];
-                let total = 0;
-                sortedMonths.forEach(month => {
-                    const val = valuesMap[month] || 0;
-                    row.push(val);
-                    total += val;
-                });
-                row.push(total);
-                sheet.addRow(row);
-            };
-
-            const addTotalRow = (valuesMap) => {
-                const row = ['', '', '', 'Total'];
-                let total = 0;
-                sortedMonths.forEach(month => {
-                    const val = valuesMap[month] || 0;
-                    row.push(val);
-                    total += val;
-                });
-                row.push(total);
-                const totalRow = sheet.addRow(row);
-
-                // Apply bold font to all total row cells
-                totalRow.eachCell(cell => {
-                    cell.font = { bold: true };
-                });
-            };
-
             // Principal row
-            addTypeRow('Principal', principal);
-
-            // 3 empty rows
-            sheet.addRow([]);
-            sheet.addRow([]);
-            sheet.addRow([]);
-
-            // Principal total row (bold)
-            addTotalRow(principal);
-
-            // 3 empty rows
-            sheet.addRow([]);
-            sheet.addRow([]);
+            const principalRow = buildRow(lender, facility, amount, 'Principal', principal);
+            principalRows.push(principalRow);
+            sortedMonths.forEach(month => {
+                principalMonthTotals[month] = (principalMonthTotals[month] || 0) + (principal[month] || 0);
+            });
+            principalGrandTotal += Object.values(principal).reduce((a, b) => a + b, 0);
 
             // Interest row
-            addTypeRow('Interest', interest);
+            const interestRow = buildRow(lender, facility, amount, 'Interest', interest);
+            interestRows.push(interestRow);
+            sortedMonths.forEach(month => {
+                interestMonthTotals[month] = (interestMonthTotals[month] || 0) + (interest[month] || 0);
+            });
+            interestGrandTotal += Object.values(interest).reduce((a, b) => a + b, 0);
 
-            // 3 empty rows
-            sheet.addRow([]);
-            sheet.addRow([]);
-            sheet.addRow([]);
-
-            // Interest total row (bold)
-            addTotalRow(interest);
-
-            // 3 empty rows
-            sheet.addRow([]);
-            sheet.addRow([]);
-
-            // Combined total (excluding Amount in Crs)
+            // Combined row (for Overall)
             const combined = {};
             sortedMonths.forEach(month => {
                 combined[month] = (principal[month] || 0) + (interest[month] || 0);
             });
-
-            addTypeRow('Total', combined, true); // Exclude amount
-
-            // 1 empty row below each group
-            sheet.addRow([]);
+            const totalRow = buildRow(lender, facility, amount, 'Total', combined, true);
+            totalRows.push(totalRow);
         }
+
+        // Calculate overall month totals
+        sortedMonths.forEach(month => {
+            const principal = principalMonthTotals[month] || 0;
+            const interest = interestMonthTotals[month] || 0;
+            overallMonthTotals[month] = principal + interest;
+            overallGrandTotal += overallMonthTotals[month];
+        });
+
+        // Add Principal Rows
+        // sheet.addRow(['', '', '', 'PRINCIPAL TOTALS']).font = { bold: true };
+        principalRows.forEach(row => sheet.addRow(row));
+
+        // Add Principal Monthly Total Row
+        const totalPrincipalRow = ['', '', '', 'Total'];
+        sortedMonths.forEach(month => {
+            totalPrincipalRow.push(principalMonthTotals[month] || 0);
+        });
+        totalPrincipalRow.push(principalGrandTotal);
+        const totalRow = sheet.addRow(totalPrincipalRow);
+        totalRow.font = { bold: true };
+
+        sheet.addRow([]);
+        sheet.addRow([]);
+
+        // Add Interest Rows
+        // sheet.addRow(['', '', '', 'INTEREST TOTALS']).font = { bold: true };
+        interestRows.forEach(row => sheet.addRow(row));
+
+        // Add Interest Monthly Total Row
+        const totalInterestRow = ['', '', '', 'Total'];
+        sortedMonths.forEach(month => {
+            totalInterestRow.push(interestMonthTotals[month] || 0);
+        });
+        totalInterestRow.push(interestGrandTotal);
+        const interestTotalRow = sheet.addRow(totalInterestRow);
+        interestTotalRow.font = { bold: true };
+
+        sheet.addRow([]);
+        sheet.addRow([]);
+
+        // Add Total Rows
+        // sheet.addRow(['', '', '', 'OVERALL TOTALS']).font = { bold: true };
+        totalRows.forEach(rowData => {
+            const row = sheet.addRow(rowData);
+            row.eachCell(cell => {
+                cell.font = { bold: true };
+            });
+        });
+
+        // Add Overall Monthly Total Row
+        const overallTotalRow = ['', '', '', 'Total'];
+        sortedMonths.forEach(month => {
+            overallTotalRow.push(overallMonthTotals[month]);
+        });
+        overallTotalRow.push(overallGrandTotal);
+        const overallRow = sheet.addRow(overallTotalRow);
+        overallRow.font = { bold: true };
 
         // Auto column widths
         sheet.columns.forEach(col => {
@@ -175,7 +208,7 @@ exports.generateRundownReport = async (req, res) => {
             col.width = maxLength + 2;
         });
 
-        // Send file
+        // Send Excel
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename=Rundown_Report.xlsx');
         await workbook.xlsx.write(res);
@@ -185,4 +218,4 @@ exports.generateRundownReport = async (req, res) => {
         console.error('Error:', error);
         res.status(500).send('Failed to generate report');
     }
-}    
+};

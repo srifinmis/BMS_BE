@@ -226,13 +226,13 @@ exports.sanctionView = async (req, res) => {
                     sanction_id: sanction_id, lender_code: lender_code, approval_status: approval_status
                     // , updatedat: updatedDate 
                 },
-                include: [
-                    {
-                        model: lender_master,
-                        as: 'lender_code_lender_master',
-                        attributes: ["lender_name"]
-                    }
-                ]
+                // include: [
+                //     {
+                //         model: lender_master,
+                //         as: 'lender_code_lender_master',
+                //         attributes: ["lender_name"]
+                //     }
+                // ]
             });
             if (sanction) {
                 return res.status(200).json({ sanction });

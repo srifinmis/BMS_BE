@@ -6,7 +6,7 @@ const cron = require("node-cron");
 const moment = require("moment");
 
 const models = initModels(sequelize);
-const { repayment_schedule_staging, repayment_schedule, alert_management, tranche_details, sanction_details } = models;
+const { repayment_schedule_staging, repayment_schedule, lender_master, alert_management, tranche_details, sanction_details } = models;
 exports.uploadRepaymentSchedule = async (req, res) => {
     try {
         const data = req.body;
@@ -72,13 +72,38 @@ exports.uploadRepaymentSchedule = async (req, res) => {
 };
 
 exports.repaymentLenders = async (req, res) => {
-    const datagot = req.body;
+    const flag = req.query.flag;
     try {
+        if (flag == 1 || flag === "1") {
+            // Fetch from repayment_schedule + get bank_name from tranche_details
+            const tranchemain = await repayment_schedule.findAll({
+                attributes: ["tranche_id", "sanction_id", "lender_code"],
+                include: [
+                    {
+                        model: tranche_details,
+                        as: 'tranche',
+                        attributes: ['bank_name'],
+                        required: true
+                    }
+                ],
+                where: { approval_status: "Approved" }
+            });
+
+            return res.status(201).json({ success: true, data: tranchemain });
+        }
         const tranchemain = await repayment_schedule.findAll({
             attributes: [
                 "tranche_id", "sanction_id", "lender_code"
-            ], where: { approval_status: "Approved" }
+            ], include: [
+                {
+                    model: lender_master,
+                    as: 'lender_code_lender_master',
+                    attributes: ['lender_name']
+                }
+            ],
+            where: { approval_status: "Approved" }
         });
+
 
         return res.status(201).json({ success: true, data: tranchemain });
     } catch (error) {

@@ -50,18 +50,19 @@ exports.generateCronExpression = async (req, res) => {
         }
         // Insert data into the alert_management table
         const newAlert = await alert_management.create({
-            alert_id:datagot.tranche_id,
+            // alert_id: datagot.tranche_id,
             sanction_id: datagot.sanction_id,
             tranche_id: datagot.tranche_id,
             alert_time: datagot.alert_time,
             alert_start_date: datagot.alert_start_date,
             alert_end_date: datagot.alert_end_date,
             alert_frequency: datagot.alert_frequency,
-            // tranche_days: datagot.tranche_days,  // Include tranche_days
-            cron_expression: cronExpression, // Save the generated cron expression
+            tranche_days: datagot.tranche_days,  
+            cron_expression: cronExpression,
             to_addr: datagot.to_addr,
             cc_addr: datagot.cc_addr,
         });
+        console.log("Generated newAlert:", newAlert);
 
         console.log("Generated Cron Expression:", cronExpression);
         res.status(200).json({ message: "Successfully Inserted Record", cronExpression });

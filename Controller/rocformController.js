@@ -16,8 +16,6 @@ exports.sanctionId = async (req, res) => {
             attributes: ["sanction_id", "lender_code", "sanction_amount", "sanction_date"],
         });
         // console.log("roc: ", sanctionget)
-
-
         // const Lenderget = await lender_master
         res.status(201).json({ message: "Roc Fetch successfully", data: sanctionget });
     } catch (error) {

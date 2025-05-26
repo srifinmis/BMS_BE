@@ -1,4 +1,5 @@
 const express = require("express");
+const router = express.Router();
 // const multer = require('multer');
 // const storage = multer.memoryStorage();
 // const upload = multer({ storage: storage });
@@ -17,7 +18,7 @@ const { lenderCreate,
 const { getLoadData } = require("../Controller/borrowingLoadController");
 const { cronalert } = require("../Controller/alertTriggerController");
 const { generateCronExpression } = require("../Controller/cronExpressionController");
-const { alertData } = require("../Controller/alertApiController");
+const { alertData, AlertPending, AlertApprove, AlertReject, AlertView, AlertFetch } = require("../Controller/alertApiController");
 
 // Sanction
 const { sanctionApprove, sanctionCheck } = require("../Controller/sanctionController");
@@ -28,6 +29,7 @@ const { sanctionReject } = require("../Controller/sanctionController");
 const { sanctionFetch } = require("../Controller/sanctionController");
 const { sanctionPending } = require("../Controller/sanctionController");
 const { sanctionCreate } = require("../Controller/sanctionController");
+
 
 // ROC Form
 const { sanctionId, rocValidate } = require("../Controller/rocformController")
@@ -91,6 +93,9 @@ const { intrestCreate,
     intrestReject,
     interestThree } = require("../Controller/IntrestRateController");
 
+
+const { generateDrawdownReport } = require("../Controller/Reports/Drawdown")
+const { generateDrawdownReportconsolidated } = require("../Controller/Reports/drawdownconsolidated")
 //reports
 const { generateLenderMasterReport } = require('../Controller/Reports/Reportscontroller');
 const { generateSanctionDetailsReport } = require('../Controller/Reports/sancctiondetailsreportcontroller');
@@ -105,8 +110,11 @@ const { generateRundownReport } = require("../Controller/Reports/RundownControll
 const { generateEffectiveInterestofReport } = require("../Controller/Reports/EffectiveInterestController");
 const { UTRuploadFileToLocal } = require("../s3_Bucket/utrstorage");
 const { UTRThree, UTRCreate, UTRFetch, UTRPending, UTRView, UTRUpdate, UTRApprove, UTRReject } = require("../Controller/UTRController");
+const { generateRepaymentScheduleReport } = require("../Controller/Reports/repaymanschedulecontroller");
+const { appendXML } = require("pdfkit");
+const { almreport } = require("../Controller/Reports/ALMController");
+const { getMasterReport } = require("../Controller/Reports/MasterController");
 
-const router = express.Router();
 
 router.post("/Login", login);
 router.use("/forgot", ForgotRoutes);
@@ -141,7 +149,7 @@ router.post("/sanction/reject", sanctionReject)
 router.get("/sanction/pendingData", sanctionPending);
 
 // ROC Form
-// use all sanctionid requests
+// use all sanctionid requests also gets lender codes&lender name  
 router.get("/roc/sanctionid", sanctionId);
 
 router.post("/roc/create", rocCreate);
@@ -205,6 +213,11 @@ router.post("/cron/create", generateCronExpression)
 
 //repayment 
 router.get("/alert/findall", alertData);
+router.get("/alert/fetchAll", AlertFetch);
+router.get("/alert/details", AlertView);
+router.post("/alert/Approve", AlertApprove);
+router.post("/alert/reject", AlertReject);
+router.get("/alert/pendingData", AlertPending);
 
 //upload
 router.post("/upload-s3", uploadFileToS3);
@@ -233,7 +246,8 @@ router.post("/schedule/Reject", scheduleReject);
 router.get("/repaymentschedule/lenders", repaymentLenders)
 
 
-//reports
+//reports API'S
+
 router.post('/generate-lender-master', generateLenderMasterReport);
 router.post('/generate-sanction-master', generateSanctionDetailsReport);
 router.post("/generate-Rocchangecreation", generateRocChargeCreationReport);
@@ -243,10 +257,15 @@ router.post("/generate-DailyRepaymentReport", generateDailyRepaymentReport);
 router.post("/generate-LoanTrancheDetailsReport", generateLoanTrancheDetailsReport);
 router.post("/generate-FundingMixReport", generateFundingMixReport);
 router.post("/generate-EffectiveInterestRateReport", generateEffectiveInterestRateReport);
-router.get("/generate-RundownReport", generateRundownReport);
-router.get("/generate-EffectiveInterestofReport", generateEffectiveInterestofReport)
+router.post("/generate-RundownReport", generateRundownReport);
+router.post("/generate-EffectiveInterestofReport", generateEffectiveInterestofReport);
+router.post("/generate-RepaymentScheduleReport", generateRepaymentScheduleReport);
+router.post("/generate-ALMReport", almreport);
+router.post("/generate-MasterReport", getMasterReport);
+router.post("/drawdowns", generateDrawdownReport);
+router.post("/drawdowns-consolidated", generateDrawdownReportconsolidated);
 
-// report get Lendrcodes apis
+// report get Lendercodes apis
 router.get("/generate/roc/lendercodes", getroclenders)
 
 module.exports = router;

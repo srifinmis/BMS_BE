@@ -46,6 +46,10 @@ exports.generateFundingMixReport = async (req, res) => {
             nest: true
         });
 
+        if (!paymentData || paymentData.length === 0) {
+            return res.status(404).json({ message: 'No records found for the selected filters.' });
+        }
+
         // Group payment amounts by sanction_id
         const paymentsBySanction = {};
         for (const d of paymentData) {
